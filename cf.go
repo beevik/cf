@@ -16,7 +16,7 @@ import (
 
 	"github.com/beevik/cmd"
 	cloudflare "github.com/cloudflare/cloudflare-go"
-	"golang.org/x/crypto/ssh/terminal"
+	"golang.org/x/term"
 )
 
 var (
@@ -184,7 +184,7 @@ func processCmd(line string) error {
 }
 
 func cmdQuit(c cmd.Selection) error {
-	return errors.New("Exiting program")
+	return errors.New("exiting program")
 }
 
 func cmdHelp(c cmd.Selection) error {
@@ -427,7 +427,7 @@ func addOrUpdateRecord(recType, name, content string) {
 }
 
 func readString(prompt string) (string, error) {
-	fmt.Printf(prompt)
+	fmt.Print(prompt)
 
 	reader := bufio.NewReader(os.Stdin)
 	text, err := reader.ReadString('\n')
@@ -438,9 +438,9 @@ func readString(prompt string) (string, error) {
 }
 
 func readHiddenString(prompt string) (string, error) {
-	fmt.Printf(prompt)
+	fmt.Print(prompt)
 
-	bytes, err := terminal.ReadPassword(int(syscall.Stdin))
+	bytes, err := term.ReadPassword(int(syscall.Stdin))
 	if err != nil {
 		return "", err
 	}

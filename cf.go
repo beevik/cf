@@ -21,10 +21,10 @@ import (
 )
 
 var (
-	interactive  bool
-	activeAPI    *cloudflare.API
-	activeZoneID string
-	cmds         *cmd.Tree
+	interactive          bool
+	activeAPI            *cloudflare.API
+	activeZoneIdentifier *cloudflare.ResourceContainer
+	cmds                 *cmd.Tree
 )
 
 func init() {
@@ -229,14 +229,14 @@ func cmdSetZone(c *cmd.Command, args []string) error {
 		return nil
 	}
 
-	activeZoneID = zoneID
+	activeZoneIdentifier = cloudflare.ZoneIdentifier(zoneID)
 	fmt.Printf("Active zone set to %v.\n", args[0])
 	return nil
 }
 
 func cmdListDomains(c *cmd.Command, args []string) error {
-	zoneID := getZoneID()
-	if zoneID == "" {
+	zoneID := getZoneIdentifier()
+	if zoneID == nil {
 		return nil
 	}
 
@@ -253,7 +253,7 @@ func cmdListDomains(c *cmd.Command, args []string) error {
 	params := cloudflare.ListDNSRecordsParams{
 		Type: recType,
 	}
-	recs, _, err := api.ListDNSRecords(context.Background(), cloudflare.ZoneIdentifier(zoneID), params)
+	recs, _, err := api.ListDNSRecords(context.Background(), zoneID, params)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return nil
@@ -336,8 +336,8 @@ func cmdAdd(c *cmd.Command, args []string) error {
 		return nil
 	}
 
-	zoneID := getZoneID()
-	if zoneID == "" {
+	zoneID := getZoneIdentifier()
+	if zoneID == nil {
 		return nil
 	}
 
@@ -351,7 +351,7 @@ func cmdAdd(c *cmd.Command, args []string) error {
 		Content: content,
 		TTL:     1,
 	}
-	_, err := api.CreateDNSRecord(context.Background(), cloudflare.ZoneIdentifier(zoneID), params)
+	_, err := api.CreateDNSRecord(context.Background(), zoneID, params)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return nil
@@ -372,8 +372,8 @@ func cmdDelete(c *cmd.Command, args []string) error {
 		return nil
 	}
 
-	zoneID := getZoneID()
-	if zoneID == "" {
+	zoneID := getZoneIdentifier()
+	if zoneID == nil {
 		return nil
 	}
 
@@ -385,12 +385,11 @@ func cmdDelete(c *cmd.Command, args []string) error {
 		return nil
 	}
 
-	zoneIdentifier := cloudflare.ZoneIdentifier(zoneID)
 	params := cloudflare.ListDNSRecordsParams{
 		Type: recType,
 		Name: name,
 	}
-	recs, _, err := api.ListDNSRecords(context.Background(), zoneIdentifier, params)
+	recs, _, err := api.ListDNSRecords(context.Background(), zoneID, params)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return nil
@@ -401,7 +400,7 @@ func cmdDelete(c *cmd.Command, args []string) error {
 	}
 
 	for _, r := range recs {
-		err := api.DeleteDNSRecord(context.Background(), zoneIdentifier, r.ID)
+		err := api.DeleteDNSRecord(context.Background(), zoneID, r.ID)
 		if err != nil {
 			fmt.Printf("Error deleting %s: %v\n", r.Name, err)
 			continue
@@ -418,12 +417,12 @@ func addOrUpdateRecord(recType, name, content string) {
 		return
 	}
 
-	zoneID := getZoneID()
-	if zoneID == "" {
+	zoneID := getZoneIdentifier()
+	if zoneID == nil {
 		return
 	}
 
-	zoneIdentifier := cloudflare.ZoneIdentifier(zoneID)
+	zoneIdentifier := zoneID
 	params := cloudflare.ListDNSRecordsParams{
 		Type: recType,
 		Name: name,
@@ -488,10 +487,8 @@ func getAPI() *cloudflare.API {
 		return activeAPI
 	}
 
-	key := os.Getenv("CLOUDFLARE_KEY")
-	email := os.Getenv("CLOUDFLARE_EMAIL")
-
 	var err error
+	email := os.Getenv("CLOUDFLARE_EMAIL")
 	if email == "" {
 		if interactive {
 			email, _ = readString("Enter cloudflare account email: ")
@@ -501,6 +498,7 @@ func getAPI() *cloudflare.API {
 		}
 	}
 
+	key := os.Getenv("CLOUDFLARE_KEY")
 	if key == "" {
 		if interactive {
 			key, _ = readHiddenString("Enter cloudflare API key: ")
@@ -519,33 +517,32 @@ func getAPI() *cloudflare.API {
 	return activeAPI
 }
 
-func getZoneID() string {
+func getZoneIdentifier() *cloudflare.ResourceContainer {
+	if activeZoneIdentifier != nil {
+		return activeZoneIdentifier
+	}
+
 	api := getAPI()
 	if api == nil {
-		return ""
+		return nil
 	}
-
-	if activeZoneID != "" {
-		return activeZoneID
-	}
-
-	zoneName := os.Getenv("CLOUDFLARE_ZONE")
 
 	var err error
+	zoneName := os.Getenv("CLOUDFLARE_ZONE")
 	if zoneName == "" && interactive {
 		zoneName, _ = readString("Enter zone name: ")
 	}
-
 	if zoneName == "" {
 		fmt.Println("CLOUDFLARE_ZONE not set.")
-		return ""
+		return nil
 	}
 
-	activeZoneID, err = api.ZoneIDByName(zoneName)
+	zoneID, err := api.ZoneIDByName(zoneName)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
-		return ""
+		return nil
 	}
 
-	return activeZoneID
+	activeZoneIdentifier = cloudflare.ZoneIdentifier(zoneID)
+	return activeZoneIdentifier
 }

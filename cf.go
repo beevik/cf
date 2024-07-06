@@ -245,12 +245,15 @@ func cmdListDomains(c *cmd.Command, args []string) error {
 		return nil
 	}
 
-	typ := ""
+	recType := ""
 	if len(args) > 0 {
-		typ = strings.ToUpper(args[0])
+		recType = strings.ToUpper(args[0])
 	}
 
-	recs, err := api.DNSRecords(context.Background(), zoneID, cloudflare.DNSRecord{Type: typ})
+	params := cloudflare.ListDNSRecordsParams{
+		Type: recType,
+	}
+	recs, _, err := api.ListDNSRecords(context.Background(), cloudflare.ZoneIdentifier(zoneID), params)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return nil
@@ -341,16 +344,14 @@ func cmdAdd(c *cmd.Command, args []string) error {
 	recType := args[0]
 	name := args[1]
 	content := args[2]
-	proxied := false
 
-	r := cloudflare.DNSRecord{
+	params := cloudflare.CreateDNSRecordParams{
 		Type:    recType,
 		Name:    name,
 		Content: content,
-		Proxied: &proxied,
 		TTL:     1,
 	}
-	_, err := api.CreateDNSRecord(context.Background(), zoneID, r)
+	_, err := api.CreateDNSRecord(context.Background(), cloudflare.ZoneIdentifier(zoneID), params)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return nil
@@ -384,7 +385,12 @@ func cmdDelete(c *cmd.Command, args []string) error {
 		return nil
 	}
 
-	recs, err := api.DNSRecords(context.Background(), zoneID, cloudflare.DNSRecord{Type: recType, Name: name})
+	zoneIdentifier := cloudflare.ZoneIdentifier(zoneID)
+	params := cloudflare.ListDNSRecordsParams{
+		Type: recType,
+		Name: name,
+	}
+	recs, _, err := api.ListDNSRecords(context.Background(), zoneIdentifier, params)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return nil
@@ -395,7 +401,7 @@ func cmdDelete(c *cmd.Command, args []string) error {
 	}
 
 	for _, r := range recs {
-		err := api.DeleteDNSRecord(context.Background(), zoneID, r.ID)
+		err := api.DeleteDNSRecord(context.Background(), zoneIdentifier, r.ID)
 		if err != nil {
 			fmt.Printf("Error deleting %s: %v\n", r.Name, err)
 			continue
@@ -417,24 +423,33 @@ func addOrUpdateRecord(recType, name, content string) {
 		return
 	}
 
-	proxied := false
-	recs, err := api.DNSRecords(context.Background(), zoneID, cloudflare.DNSRecord{Type: recType, Name: name})
+	zoneIdentifier := cloudflare.ZoneIdentifier(zoneID)
+	params := cloudflare.ListDNSRecordsParams{
+		Type: recType,
+		Name: name,
+	}
+	recs, _, err := api.ListDNSRecords(context.Background(), zoneIdentifier, params)
 	if err == nil && len(recs) > 0 {
 		r := recs[0]
 		if r.Content != content {
-			r.Content = content
-			r.Proxied = &proxied
-			err = api.UpdateDNSRecord(context.Background(), zoneID, r.ID, r)
+			params := cloudflare.UpdateDNSRecordParams{
+				Type:    r.Type,
+				Name:    name,
+				Content: content,
+				ID:      r.ID,
+				TTL:     r.TTL,
+			}
+			_, err = api.UpdateDNSRecord(context.Background(), zoneIdentifier, params)
 		}
 	} else {
-		r := cloudflare.DNSRecord{
-			Type:    recType,
-			Name:    name,
-			Content: content,
-			Proxied: &proxied,
-			TTL:     1,
+		params := cloudflare.CreateDNSRecordParams{
+			Type:      recType,
+			Name:      name,
+			Content:   content,
+			TTL:       1,
+			Proxiable: false,
 		}
-		_, err = api.CreateDNSRecord(context.Background(), zoneID, r)
+		_, err = api.CreateDNSRecord(context.Background(), zoneIdentifier, params)
 	}
 
 	if err != nil {

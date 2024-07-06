@@ -8,6 +8,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -27,21 +28,24 @@ var (
 )
 
 func init() {
-	root := cmd.NewTree("Primary")
-	root.AddCommand(cmd.Command{
+	root := cmd.NewTree(cmd.TreeDescriptor{
+		Name: "Primary",
+	})
+
+	root.AddCommand(cmd.CommandDescriptor{
 		Name:        "help",
 		Description: "Display help for a command.",
 		Usage:       "help [<command>]",
 		Data:        cmdHelp,
 	})
-	root.AddCommand(cmd.Command{
+	root.AddCommand(cmd.CommandDescriptor{
 		Name:        "list",
 		Brief:       "List all DNS records",
 		Description: "List all DNS records in the currently active zone.",
 		Usage:       "list [<type>]",
 		Data:        cmdListDomains,
 	})
-	root.AddCommand(cmd.Command{
+	root.AddCommand(cmd.CommandDescriptor{
 		Name:  "ip4",
 		Brief: "Add or modify an IPv4 Address (type A) record",
 		Description: "Add or modify an IPv4 address (type A) DNS record " +
@@ -49,7 +53,7 @@ func init() {
 		Usage: "ip4 <name> <address>",
 		Data:  cmdIP4,
 	})
-	root.AddCommand(cmd.Command{
+	root.AddCommand(cmd.CommandDescriptor{
 		Name:  "ip6",
 		Brief: "Add or modify an IPv6 Address (type AAAA) record",
 		Description: "Add or modify an IPv6 address (type AAAA) DNS record " +
@@ -57,7 +61,7 @@ func init() {
 		Usage: "ip6 <name> <address>",
 		Data:  cmdIP6,
 	})
-	root.AddCommand(cmd.Command{
+	root.AddCommand(cmd.CommandDescriptor{
 		Name:  "cname",
 		Brief: "Add or modify a CNAME record",
 		Description: "Add or modify a CNAME DNS record " +
@@ -65,7 +69,7 @@ func init() {
 		Usage: "cname <name> <address>",
 		Data:  cmdCNAME,
 	})
-	root.AddCommand(cmd.Command{
+	root.AddCommand(cmd.CommandDescriptor{
 		Name:  "txt",
 		Brief: "Add or modify a text (type TXT) record",
 		Description: "Add or modify a text (type TXT) DNS record " +
@@ -73,7 +77,7 @@ func init() {
 		Usage: "txt <name> <address>",
 		Data:  cmdTXT,
 	})
-	root.AddCommand(cmd.Command{
+	root.AddCommand(cmd.CommandDescriptor{
 		Name:  "add",
 		Brief: "Add a DNS record",
 		Description: "Add a DNS record of the requested type " +
@@ -85,7 +89,7 @@ func init() {
 		Usage: "add <type> <name> \"<content>\"",
 		Data:  cmdAdd,
 	})
-	root.AddCommand(cmd.Command{
+	root.AddCommand(cmd.CommandDescriptor{
 		Name:  "delete",
 		Brief: "Delete DNS record(s)",
 		Description: "Delete all DNS records matching the requested type " +
@@ -94,14 +98,14 @@ func init() {
 		Usage: "delete <type> <name>",
 		Data:  cmdDelete,
 	})
-	root.AddCommand(cmd.Command{
+	root.AddCommand(cmd.CommandDescriptor{
 		Name:        "zone",
 		Brief:       "Set active zone",
 		Description: "Set the active zone used by all future commands.",
 		Usage:       "zone <name>",
 		Data:        cmdSetZone,
 	})
-	root.AddCommand(cmd.Command{
+	root.AddCommand(cmd.CommandDescriptor{
 		Name:  "quit",
 		Brief: "Quit the application",
 		Usage: "quit",
@@ -154,9 +158,10 @@ func fixupArgs(args []string) string {
 
 func processCmd(line string) error {
 	var err error
-	var c cmd.Selection
+	var args []string
+	var n cmd.Node
 	if line != "" {
-		c, err = cmds.Lookup(line)
+		n, args, err = cmds.Lookup(line)
 		switch {
 		case err == cmd.ErrNotFound:
 			fmt.Println("Command not found.")
@@ -170,34 +175,46 @@ func processCmd(line string) error {
 		}
 	}
 
-	if c.Command == nil {
+	if n == nil {
 		return nil
 	}
-	if c.Command.Data == nil && c.Command.Subtree != nil {
-		c.Command.Subtree.DisplayCommands(os.Stdout)
-		c.Command.DisplayShortcuts(os.Stdout)
-		return nil
-	}
-
-	handler := c.Command.Data.(func(cmd.Selection) error)
-	return handler(c)
-}
-
-func cmdQuit(c cmd.Selection) error {
-	return errors.New("exiting program")
-}
-
-func cmdHelp(c cmd.Selection) error {
-	err := cmds.DisplayHelp(os.Stdout, c.Args)
-	if err != nil {
-		fmt.Printf("%v.\n", err)
+	if c, ok := n.(*cmd.Command); ok {
+		handler := c.Data.(func(cmd *cmd.Command, args []string) error)
+		return handler(c, args)
 	}
 	return nil
 }
 
-func cmdSetZone(c cmd.Selection) error {
-	if len(c.Args) < 1 {
-		c.Command.DisplayUsage(os.Stdout)
+func cmdQuit(c *cmd.Command, args []string) error {
+	return errors.New("exiting program")
+}
+
+func cmdHelp(c *cmd.Command, args []string) error {
+	if len(args) == 0 {
+		c.Parent().DisplayHelp(os.Stdout)
+	} else {
+		n, _, err := cmds.Lookup(args[0])
+		switch {
+		case err == cmd.ErrNotFound:
+			fmt.Println("Command not found.")
+			return nil
+		case err == cmd.ErrAmbiguous:
+			fmt.Println("Command ambiguous.")
+			return nil
+		case err != nil:
+			fmt.Printf("Error: %v\n", err)
+			return nil
+		}
+		if cc, ok := n.(*cmd.Command); ok {
+			cc.DisplayHelp(os.Stdout)
+		}
+	}
+	return nil
+}
+
+func cmdSetZone(c *cmd.Command, args []string) error {
+	if len(args) < 1 {
+		c.DisplayUsage(os.Stdout)
 		return nil
 	}
 
@@ -206,18 +223,18 @@ func cmdSetZone(c cmd.Selection) error {
 		return nil
 	}
 
-	zoneID, err := api.ZoneIDByName(c.Args[0])
+	zoneID, err := api.ZoneIDByName(args[0])
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return nil
 	}
 
 	activeZoneID = zoneID
-	fmt.Printf("Active zone set to %v.\n", c.Args[0])
+	fmt.Printf("Active zone set to %v.\n", args[0])
 	return nil
 }
 
-func cmdListDomains(c cmd.Selection) error {
+func cmdListDomains(c *cmd.Command, args []string) error {
 	zoneID := getZoneID()
 	if zoneID == "" {
 		return nil
@@ -229,11 +246,11 @@ func cmdListDomains(c cmd.Selection) error {
 	}
 
 	typ := ""
-	if len(c.Args) > 0 {
-		typ = strings.ToUpper(c.Args[0])
+	if len(args) > 0 {
+		typ = strings.ToUpper(args[0])
 	}
 
-	recs, err := api.DNSRecords(zoneID, cloudflare.DNSRecord{Type: typ})
+	recs, err := api.DNSRecords(context.Background(), zoneID, cloudflare.DNSRecord{Type: typ})
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return nil
@@ -257,57 +274,57 @@ func cmdListDomains(c cmd.Selection) error {
 	return nil
 }
 
-func cmdIP4(c cmd.Selection) error {
-	if len(c.Args) != 2 {
-		c.Command.DisplayUsage(os.Stdout)
+func cmdIP4(c *cmd.Command, args []string) error {
+	if len(args) != 2 {
+		c.DisplayUsage(os.Stdout)
 		return nil
 	}
 
-	name := c.Args[0]
-	addr := c.Args[1]
+	name := args[0]
+	addr := args[1]
 	addOrUpdateRecord("A", name, addr)
 	return nil
 }
 
-func cmdIP6(c cmd.Selection) error {
-	if len(c.Args) != 2 {
-		c.Command.DisplayUsage(os.Stdout)
+func cmdIP6(c *cmd.Command, args []string) error {
+	if len(args) != 2 {
+		c.DisplayUsage(os.Stdout)
 		return nil
 	}
 
-	name := c.Args[0]
-	addr := c.Args[1]
+	name := args[0]
+	addr := args[1]
 	addOrUpdateRecord("AAAA", name, addr)
 	return nil
 }
 
-func cmdCNAME(c cmd.Selection) error {
-	if len(c.Args) != 2 {
-		c.Command.DisplayUsage(os.Stdout)
+func cmdCNAME(c *cmd.Command, args []string) error {
+	if len(args) != 2 {
+		c.DisplayUsage(os.Stdout)
 		return nil
 	}
 
-	name := c.Args[0]
-	addr := c.Args[1]
+	name := args[0]
+	addr := args[1]
 	addOrUpdateRecord("CNAME", name, addr)
 	return nil
 }
 
-func cmdTXT(c cmd.Selection) error {
-	if len(c.Args) != 2 {
-		c.Command.DisplayUsage(os.Stdout)
+func cmdTXT(c *cmd.Command, args []string) error {
+	if len(args) != 2 {
+		c.DisplayUsage(os.Stdout)
 		return nil
 	}
 
-	name := c.Args[0]
-	content := c.Args[1]
+	name := args[0]
+	content := args[1]
 	addOrUpdateRecord("TXT", name, content)
 	return nil
 }
 
-func cmdAdd(c cmd.Selection) error {
-	if len(c.Args) != 3 {
-		c.Command.DisplayUsage(os.Stdout)
+func cmdAdd(c *cmd.Command, args []string) error {
+	if len(args) != 3 {
+		c.DisplayUsage(os.Stdout)
 		return nil
 	}
 
@@ -321,18 +338,19 @@ func cmdAdd(c cmd.Selection) error {
 		return nil
 	}
 
-	recType := c.Args[0]
-	name := c.Args[1]
-	content := c.Args[2]
+	recType := args[0]
+	name := args[1]
+	content := args[2]
+	proxied := false
 
 	r := cloudflare.DNSRecord{
 		Type:    recType,
 		Name:    name,
 		Content: content,
-		Proxied: false,
+		Proxied: &proxied,
 		TTL:     1,
 	}
-	_, err := api.CreateDNSRecord(zoneID, r)
+	_, err := api.CreateDNSRecord(context.Background(), zoneID, r)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return nil
@@ -342,9 +360,9 @@ func cmdAdd(c cmd.Selection) error {
 	return nil
 }
 
-func cmdDelete(c cmd.Selection) error {
-	if len(c.Args) != 2 {
-		c.Command.DisplayUsage(os.Stdout)
+func cmdDelete(c *cmd.Command, args []string) error {
+	if len(args) != 2 {
+		c.DisplayUsage(os.Stdout)
 		return nil
 	}
 
@@ -358,15 +376,15 @@ func cmdDelete(c cmd.Selection) error {
 		return nil
 	}
 
-	recType := c.Args[0]
-	name := c.Args[1]
+	recType := args[0]
+	name := args[1]
 
 	if len(recType) < 1 {
 		fmt.Printf("Must provide valid DNS record type.")
 		return nil
 	}
 
-	recs, err := api.DNSRecords(zoneID, cloudflare.DNSRecord{Type: recType, Name: name})
+	recs, err := api.DNSRecords(context.Background(), zoneID, cloudflare.DNSRecord{Type: recType, Name: name})
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return nil
@@ -377,7 +395,7 @@ func cmdDelete(c cmd.Selection) error {
 	}
 
 	for _, r := range recs {
-		err := api.DeleteDNSRecord(zoneID, r.ID)
+		err := api.DeleteDNSRecord(context.Background(), zoneID, r.ID)
 		if err != nil {
 			fmt.Printf("Error deleting %s: %v\n", r.Name, err)
 			continue
@@ -399,23 +417,24 @@ func addOrUpdateRecord(recType, name, content string) {
 		return
 	}
 
-	recs, err := api.DNSRecords(zoneID, cloudflare.DNSRecord{Type: recType, Name: name})
+	proxied := false
+	recs, err := api.DNSRecords(context.Background(), zoneID, cloudflare.DNSRecord{Type: recType, Name: name})
 	if err == nil && len(recs) > 0 {
 		r := recs[0]
 		if r.Content != content {
 			r.Content = content
-			r.Proxied = false
-			err = api.UpdateDNSRecord(zoneID, r.ID, r)
+			r.Proxied = &proxied
+			err = api.UpdateDNSRecord(context.Background(), zoneID, r.ID, r)
 		}
 	} else {
 		r := cloudflare.DNSRecord{
 			Type:    recType,
 			Name:    name,
 			Content: content,
-			Proxied: false,
+			Proxied: &proxied,
 			TTL:     1,
 		}
-		_, err = api.CreateDNSRecord(zoneID, r)
+		_, err = api.CreateDNSRecord(context.Background(), zoneID, r)
 	}
 
 	if err != nil {

@@ -4,7 +4,7 @@ go 1.22
 
 require (
 	github.com/beevik/cmd v0.3.0
-	github.com/cloudflare/cloudflare-go v0.109.0
+	github.com/cloudflare/cloudflare-go v0.110.0
 	golang.org/x/term v0.26.0
 )
 

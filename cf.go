@@ -488,27 +488,17 @@ func getAPI() *cloudflare.API {
 	}
 
 	var err error
-	email := os.Getenv("CLOUDFLARE_EMAIL")
-	if email == "" {
+	token := os.Getenv("CLOUDFLARE_DNS_API_TOKEN")
+	if token == "" {
 		if interactive {
-			email, _ = readString("Enter cloudflare account email: ")
+			token, _ = readHiddenString("Enter cloudflare DNS API token: ")
 		} else {
-			fmt.Println("CLOUDFLARE_EMAIL not set.")
+			fmt.Println("CLOUDFLARE_DNS_API_TOKEN not set.")
 			return nil
 		}
 	}
 
-	key := os.Getenv("CLOUDFLARE_KEY")
-	if key == "" {
-		if interactive {
-			key, _ = readHiddenString("Enter cloudflare API key: ")
-		} else {
-			fmt.Println("CLOUDFLARE_KEY not set.")
-			return nil
-		}
-	}
-
-	activeAPI, err = cloudflare.New(key, email)
+	activeAPI, err = cloudflare.NewWithAPIToken(token)
 	if err != nil {
 		fmt.Printf("Error: %v", err)
 		return nil

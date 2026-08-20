@@ -46,11 +46,16 @@ cf> ip4 foo.example.com 10.0.0.1
 DNS record updated.
 ```
 
-Some commands require Cloudflare credentials, which you will be prompted for
-when you issue the command.  All future commands you enter during the same
-interactive session will rely on these credentials, so you only need to enter
-them once. If you prefer to provide the credentials through environment
-variables, that is also possible.  See the next section for details.
+Some commands require a Cloudflare API token and a zone name, which you will
+be prompted for when you issue the command.  All future commands you enter
+during the same interactive session will rely on them, so you only need to
+enter them once. If you prefer to provide them through environment variables,
+that is also possible.  See the next section for details.
+
+The token must have permission to read and edit DNS records in the zone you
+wish to modify. You can create one from the [API Tokens](
+https://dash.cloudflare.com/profile/api-tokens) page of the Cloudflare
+dashboard using the "Edit zone DNS" template.
 
 ## Non-interactive mode
 
@@ -72,22 +77,20 @@ Primary commands:
     quit    Quit the application
 ```
 
-Since cloudflare credentials cannot be requested in non-interactive mode, you
-will need to provide them through the following environment variables:
+Since the cloudflare API token cannot be requested in non-interactive mode,
+you will need to provide it through the following environment variables:
 
-| Variable         | Description                           |
-|------------------|---------------------------------------|
-| CLOUDFLARE_EMAIL | Your cloudflare account email address |
-| CLOUDFLARE_KEY   | Your cloudflare API key               |
-| CLOUDFLARE_ZONE  | Your cloudflare zone name             |
+| Variable                  | Description                 |
+|---------------------------|-----------------------------|
+| CLOUDFLARE_DNS_API_TOKEN  | Your cloudflare API token   |
+| CLOUDFLARE_ZONE           | Your cloudflare zone name   |
 
 
 On Mac and Linux, this can be done in the bash shell as in the following
 example:
 
 ```text
-$ CLOUDFLARE_EMAIL=me@email.com \
-CLOUDFLARE_KEY=d299c6cdc6464f35a0f45fc789eb12a2 \
+$ CLOUDFLARE_DNS_API_TOKEN=nC8vv_dMFPeAHPPh3Xb5RUlB8TZ4iBpVLpxKAoJs \
 CLOUDFLARE_ZONE=example.com \
 cf list
 ```
@@ -95,8 +98,7 @@ cf list
 On Windows, you can do this:
 
 ```text
-C:\>set CLOUDFLARE_EMAIL=me@email.com
-C:\>set CLOUDFLARE_KEY=d299c6cdc6464f35a0f45fc789eb12a2
+C:\>set CLOUDFLARE_DNS_API_TOKEN=nC8vv_dMFPeAHPPh3Xb5RUlB8TZ4iBpVLpxKAoJs
 C:\>set CLOUDFLARE_ZONE=example.com
 C:\>cf list
 ```
